@@ -55,6 +55,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <inttypes.h>
 
 // ZS
 #ifdef __WIN32__
@@ -124,11 +125,10 @@ static void BoostPriority(void);
 
 /* internal prototypes */
 
-static unsigned long relocate(unsigned char * pdata, unsigned long * len, unsigned long *addr,unsigned long skip);
-static void SendFile( unsigned long addr, unsigned long skip , unsigned char * buf, unsigned long len);
+static unsigned long relocate(uint8_t * pdata, unsigned long * len, uint32_t *addr, unsigned long skip);
+static void SendFile( uint32_t addr, unsigned long skip , uint8_t * buf, unsigned long len);
 
-static unsigned long ReverseEndian(unsigned long d);
-static unsigned long ReverseEndian(unsigned long d)
+static uint32_t ReverseEndian(uint32_t d)
 {
   return  ((d << 24) |
 	  ((d & 0x0000ff00) << 8) |
@@ -140,7 +140,7 @@ static unsigned long ReverseEndian(unsigned long d)
 #define LE_TO_BE(_x)    ReverseEndian(_x)
 
 
-#define BE_TO_LEW(_x)    ( (unsigned short)( ((_x)>>8)|((_x)<<8) ) )
+#define BE_TO_LEW(_x)    ( (uint16_t)( ((_x)>>8)|((_x)<<8) ) )
 #define LE_TO_BEW(_x)    BE_TO_LEW(_x)
 
 
@@ -149,7 +149,7 @@ static void ArgValue( char *s, unsigned long *value );
 
 
 static unsigned long gBase = kLPT1Base;                 /* default to LPT2 */
-static unsigned long gBaseAddr = 0x4000;                /* default base */
+static uint32_t gBaseAddr = 0x4000;                     /* default base */
 static unsigned long gHeaderSkip = 0;                   /* default header size */ /* was 28,changed 42BS */
 static unsigned long gWait = 1;
 static int   gSwitchCommand = 1;
@@ -191,7 +191,7 @@ From LOADER.DOC:
 6) continue for the next three bytes
 */
 // ZS
-static inline void SendNibble(unsigned char c)
+static inline void SendNibble(uint8_t c)
 {
   while( !(inb( gBase+kStatusReg ) & 0x80) )       /* wait for BUSY = 0 */
     ;
@@ -213,7 +213,7 @@ static inline void SendNibble(unsigned char c)
 
 
 // ZS
-static inline void SendByte(unsigned char c )
+static inline void SendByte(uint8_t c)
 {
     if (g4BitMode)
     {
@@ -228,7 +228,7 @@ static inline void SendByte(unsigned char c )
 
 
 // ZS
-static inline void SendLongHyper(unsigned long w)
+static inline void SendLongHyper(uint32_t w)
 {
 	SendByte(w & 0xFF);
 	w >>= 8;
@@ -240,7 +240,7 @@ static inline void SendLongHyper(unsigned long w)
 }
 
 
-static inline void SendLong( unsigned long w)
+static inline void SendLong(uint32_t w)
 {
 // ZS
 /*
@@ -249,15 +249,15 @@ register int a;
   for( a = gWait; a; --a)
 		;
 */
-  SendByte( (unsigned char)w );
-  SendByte( (unsigned char)(w >> 8) );
-  SendByte( (unsigned char)(w >> 16) );
-  SendByte( (unsigned char)(w >> 24) );
+  SendByte( (uint8_t)w );
+  SendByte( (uint8_t)(w >> 8) );
+  SendByte( (uint8_t)(w >> 16) );
+  SendByte( (uint8_t)(w >> 24) );
 }
 
 
 // ZS
-static inline int SendWord(unsigned short w)
+static inline int SendWord(uint16_t w)
 {
 	unsigned int i, j;
 
@@ -302,7 +302,7 @@ static void InitPortHyper()
 
 
 
-static int LoadFile( char *fn, unsigned long *addr, unsigned long *skip, unsigned char **buf)
+static int LoadFile( char *fn, uint32_t *addr, unsigned long *skip, uint8_t **buf)
 {
   FILE *fp;
   unsigned long len;
@@ -320,14 +320,14 @@ static int LoadFile( char *fn, unsigned long *addr, unsigned long *skip, unsigne
 
   fseek( fp, 0, SEEK_SET );   /* 42BS */
 
-  *buf = (unsigned char*)malloc( len );
+  *buf = (uint8_t *)malloc( len );
 
-  if ( *buf == (unsigned char *)NULL ){
+  if ( *buf == NULL ){
     printf("SendFile: couldn't alloc buf!\n");
     return -1;
   }
 
-  fread( *buf, sizeof(char), len, fp );
+  fread( *buf, sizeof((*buf)[0]), len, fp );
 
   *skip = relocate( *buf, &len , addr, *skip);    // relocate program
 
@@ -344,7 +344,7 @@ int main( int argc,char *argv[] )
     printf("\n");
     printf("usage: loader [-s skipbytes] [-w wait] [-b baseaddr] [-p lptbase] [-n] [-8] <filename>\n");
     printf("       skipbytes is # bytes in header to skip.   default = %ld\n", gHeaderSkip);
-    printf("       baseaddr is addr to upload to.            default = 0x%08lx\n", gBaseAddr);
+    printf("       baseaddr is addr to upload to.            default = 0x%08x\n", gBaseAddr);
     printf("       lptbase specifies base addr of LPT port.  default = 0x%lx\n", gBase);
     printf("       wait - counter between longs.             default = %ld\n",gWait);
     printf("       -n => don`t send switch-command\n");
@@ -384,7 +384,7 @@ int main( int argc,char *argv[] )
   if (HighPriority) BoostPriority(); 
 
   {
-    unsigned char *buffer;
+    uint8_t *buffer;
 
     // ZS
     /* unsigned long length; */
@@ -425,6 +425,7 @@ static Boolean ParseCmds( unsigned long argc, char *argv[] )
 {
    char *s;
    unsigned long cnt;
+   unsigned long tmp;
 
    if ( argc == 1 )
      return false;
@@ -443,7 +444,8 @@ static Boolean ParseCmds( unsigned long argc, char *argv[] )
 
       case 'b':
 	cnt++;
-	ArgValue( argv[cnt], &gBaseAddr );
+	ArgValue( argv[cnt], &tmp );
+        gBaseAddr = tmp;
 	break;
 
       case 'p':
@@ -488,16 +490,16 @@ static Boolean ParseCmds( unsigned long argc, char *argv[] )
 }
 
 
-static void SendFile( unsigned long addr, unsigned long skip, unsigned char *buf, unsigned long len)
+static void SendFile( uint32_t addr, unsigned long skip, uint8_t *buf, unsigned long len)
 {
-  long *copy;
-  long cksum = 0;
-  long data;
-  unsigned char * save_buf = buf;   /* 42BS */
+  uint32_t *copy;
+  int32_t cksum = 0;
+  uint32_t data;
+  uint8_t * save_buf = buf;   /* 42BS */
   unsigned long len2;               // ZS
 
   printf("start is $%x\n"
-	 "transmit-lenght is %ld\n",(int)addr,len);
+	 "transmit-lenght is %ld\n", addr, len);
 
   buf += skip;                 // skip some bytes
 
@@ -523,24 +525,24 @@ static void SendFile( unsigned long addr, unsigned long skip, unsigned char *buf
   // for(;;)
   SendLongHyper( 0x22071970 ); /* send magic number */
   SendLongHyper( addr );       /* send starting addr */
-  SendLongHyper( len+4 );      /* send length */
+  SendLongHyper( (uint32_t)len+4 );      /* send length */
 
   len >>= 2;                   /* bytes -> words */
   len2 = len;                  // ZS
   /* lets say :32-bit words :-) */
 
-  copy = (unsigned long*)buf;
+  copy = (uint32_t *)buf;
 
   while ( len-- ){
     data = BE_TO_LE(*copy++);
     cksum -= data;
     SendLongHyper( data );
-    if (!(len & 0xFF)) printf("uploading... %u %%\r", (int)((100 * (len2 - len)) / len2));     // ZS
+    if (!(len & 0xFF)) printf("uploading... %u %%\r", (unsigned int)((100 * (len2 - len)) / len2));     // ZS
   }
   printf("\n");                 // ZS
   SendLongHyper( cksum );       /* send checksum */
 
-  printf("cksum = %08lx\n", cksum);
+  printf("cksum = %08x\n", cksum);
 
   free( save_buf );     /* 42BS */
 }
@@ -552,14 +554,14 @@ static void SendFile( unsigned long addr, unsigned long skip, unsigned char *buf
 	 if so, skip,addr and len are adjusted
 */
 
-static unsigned long relocate( unsigned char * pdata, unsigned long *len , unsigned long *addr, unsigned long skip)
+static unsigned long relocate( uint8_t *pdata, unsigned long *len , uint32_t *addr, unsigned long skip)
 {
 
   if ( (pdata[0] == 0x60) && (pdata[1] == 0x1a) ){ // GEMDOS - header
 
-    if ( *((unsigned long *)(pdata+28)) == BE_TO_LE(0x4a414752) ){ /* JAGR */
+    if ( *((uint32_t *)(pdata+28)) == BE_TO_LE(0x4a414752) ){ /* JAGR */
 
-      unsigned short type = BE_TO_LEW(*((unsigned short *)(pdata+32)));
+      uint16_t type = BE_TO_LEW(*((uint16_t *)(pdata+32)));
       unsigned long new_len;
 
       if ( type != 2 && type != 3 ){
@@ -568,9 +570,9 @@ static unsigned long relocate( unsigned char * pdata, unsigned long *len , unsig
 	exit(-1);
       }
 
-      *addr = BE_TO_LE( *(unsigned long *)(pdata+34) );  // dest and start address
+      *addr = BE_TO_LE( *(uint32_t *)(pdata+34) );  // dest and start address
 
-      if ( (new_len = BE_TO_LE( *(unsigned long *)(pdata+38) ) )){
+      if ( (new_len = BE_TO_LE( *(uint32_t *)(pdata+38) ) )){
 
 	*len = new_len;
       }
@@ -583,23 +585,23 @@ static unsigned long relocate( unsigned char * pdata, unsigned long *len , unsig
 //
 // BJL - program
 //
-      unsigned long textlen,datalen,bss_len,symblen;   /* header info */
-      unsigned long offset;
-      unsigned long addr2 = *addr;
-      unsigned char * reloptr, * pdata2;
+      uint32_t textlen,datalen,bss_len,symblen;   /* header info */
+      uint32_t offset;
+      uint32_t addr2 = *addr;
+      uint8_t *reloptr, *pdata2;
 
 //    printf("Relocating BJL ...\n");
 
-      textlen = BE_TO_LE(*(unsigned long *)(pdata+2));
-      datalen = BE_TO_LE(*(unsigned long *)(pdata+6));
-      bss_len = BE_TO_LE(*(unsigned long *)(pdata+10)); //  no need for this, yet
-      symblen = BE_TO_LE(*(unsigned long *)(pdata+14));
+      textlen = BE_TO_LE(*(uint32_t *)(pdata+2));
+      datalen = BE_TO_LE(*(uint32_t *)(pdata+6));
+      bss_len = BE_TO_LE(*(uint32_t *)(pdata+10)); //  no need for this, yet
+      symblen = BE_TO_LE(*(uint32_t *)(pdata+14));
 
 //    printf("TEXT(%08x) DATA(%08x) BSS(%08x) SYM(%d)\n",textlen,datalen,bss_len,symblen);
 
       reloptr = pdata + textlen + datalen + symblen + 28;
 
-      offset = BE_TO_LE(*(unsigned long *)reloptr);   // first long to relocate
+      offset = BE_TO_LE(*(uint32_t *)reloptr);   // first long to relocate
 
 //    printf("Offset :%08x\n",offset);
 
@@ -611,13 +613,13 @@ static unsigned long relocate( unsigned char * pdata, unsigned long *len , unsig
 
       while ( offset ){              // until offset == 0
       // compute new address
-//      *(unsigned long *)pdata2 = LE_TO_BE(BE_TO_LE( *(unsigned long *)pdata2 ) + addr2);
-	*(unsigned long *)pdata2 += addr2;       // ha, it works ;-)
+//      *(uint32_t *)pdata2 = LE_TO_BE(BE_TO_LE( *(uint32_t *)pdata2 ) + addr2);
+	*(uint32_t *)pdata2 += addr2;       // ha, it works ;-)
 
       // as long as offset is 1 skip 254 byte
 	do{
 
-	  offset = (unsigned long) *reloptr;
+	  offset = (uint32_t) *reloptr;
 	  ++reloptr;
 	  if (! --offset)
 	    pdata2 += 254;
@@ -631,9 +633,9 @@ static unsigned long relocate( unsigned char * pdata, unsigned long *len , unsig
   } else if ( (pdata[0] == 0x01) && (pdata[1] == 0x50) ) {
 
     printf("COFF-Header found ...\n");
-    *addr = BE_TO_LE(*(unsigned long *)(pdata+56));
+    *addr = BE_TO_LE(*(uint32_t *)(pdata+56));
 
-    skip = BE_TO_LE(*(unsigned long *)(pdata+68));
+    skip = BE_TO_LE(*(uint32_t *)(pdata+68));
 
     *len -= skip;
 
