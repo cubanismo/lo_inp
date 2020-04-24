@@ -36,8 +36,8 @@
                       raised the process' and thread's priorities by default (see PriorityBoost() and the new "-x" option.)
                       added the date in the "usage" info, and fixed a typo.
 
-	 9 Nov 07 ZS	  made it Linux-compatible again
-					  inline low-level communications functions to (try to) reduce latency 
+     9 Nov 07 ZS      made it Linux-compatible again
+                      inline low-level communications functions to (try to) reduce latency
 */
 
 
@@ -119,16 +119,16 @@ CONTROL
 
 
 // ZS
-void BoostPriority(void);
+static void BoostPriority(void);
 
 
 /* internal prototypes */
 
-unsigned long relocate(unsigned char * pdata, unsigned long * len, unsigned long *addr,unsigned long skip);
-void SendFile( unsigned long addr, unsigned long skip , unsigned char * buf, unsigned long len);
+static unsigned long relocate(unsigned char * pdata, unsigned long * len, unsigned long *addr,unsigned long skip);
+static void SendFile( unsigned long addr, unsigned long skip , unsigned char * buf, unsigned long len);
 
-unsigned long ReverseEndian(unsigned long d);
-unsigned long ReverseEndian(unsigned long d)
+static unsigned long ReverseEndian(unsigned long d);
+static unsigned long ReverseEndian(unsigned long d)
 {
   return  ((d << 24) |
 	  ((d & 0x0000ff00) << 8) |
@@ -144,20 +144,20 @@ unsigned long ReverseEndian(unsigned long d)
 #define LE_TO_BEW(_x)    BE_TO_LEW(_x)
 
 
-Boolean ParseCmds( unsigned long argc, char *argv[] );
-void ArgValue( char *s, unsigned long *value );
+static Boolean ParseCmds( unsigned long argc, char *argv[] );
+static void ArgValue( char *s, unsigned long *value );
 
 
-unsigned long gBase = kLPT1Base;                        /* default to LPT2 */
-unsigned long gBaseAddr = 0x4000;                       /* default base */
-unsigned long gHeaderSkip = 0;                          /* default header size */ /* was 28,changed 42BS */
-unsigned long gWait = 1;
-int   gSwitchCommand = 1;
-int   gStartLoader = 0;
-int   g4BitMode = 1;
-int   gDebugUpload = 0;
-char *gImageName = "Joe Britt";
-int   HighPriority = 1;
+static unsigned long gBase = kLPT1Base;                 /* default to LPT2 */
+static unsigned long gBaseAddr = 0x4000;                /* default base */
+static unsigned long gHeaderSkip = 0;                   /* default header size */ /* was 28,changed 42BS */
+static unsigned long gWait = 1;
+static int   gSwitchCommand = 1;
+static int   gStartLoader = 0;
+static int   g4BitMode = 1;
+static int   gDebugUpload = 0;
+static char *gImageName = "Joe Britt";
+static int   HighPriority = 1;
 
 
 
@@ -174,7 +174,7 @@ int   HighPriority = 1;
 
 
 // ZS
-inline void wait()
+static inline void wait()
 {
     int a;
     for (a = gWait; a; a--) outb(0x00, 0x80);
@@ -191,7 +191,7 @@ From LOADER.DOC:
 6) continue for the next three bytes
 */
 // ZS
-inline void SendNibble(unsigned char c)
+static inline void SendNibble(unsigned char c)
 {
   while( !(inb( gBase+kStatusReg ) & 0x80) )       /* wait for BUSY = 0 */
     ;
@@ -213,7 +213,7 @@ inline void SendNibble(unsigned char c)
 
 
 // ZS
-inline void SendByte(unsigned char c )
+static inline void SendByte(unsigned char c )
 {
     if (g4BitMode)
     {
@@ -228,7 +228,7 @@ inline void SendByte(unsigned char c )
 
 
 // ZS
-inline void SendLongHyper(unsigned long w)
+static inline void SendLongHyper(unsigned long w)
 {
 	SendByte(w & 0xFF);
 	w >>= 8;
@@ -240,7 +240,7 @@ inline void SendLongHyper(unsigned long w)
 }
 
 
-inline void SendLong( unsigned long w)
+static inline void SendLong( unsigned long w)
 {
 // ZS
 /*
@@ -257,7 +257,7 @@ register int a;
 
 
 // ZS
-inline int SendWord(unsigned short w)
+static inline int SendWord(unsigned short w)
 {
 	unsigned int i, j;
 
@@ -282,7 +282,7 @@ inline int SendWord(unsigned short w)
 
 
 // ZS
-void InitPortNormal()
+static void InitPortNormal()
 {
 	outb(0, gBase+kDataReg);
 	outb(0, gBase+kStatusReg);
@@ -292,7 +292,7 @@ void InitPortNormal()
 }
 
 // ZS
-void InitPortHyper()
+static void InitPortHyper()
 {
 	outb(0, gBase+kDataReg);
 	outb(0, gBase+kStatusReg);
@@ -302,7 +302,7 @@ void InitPortHyper()
 
 
 
-int LoadFile( char *fn, unsigned long *addr, unsigned long *skip, unsigned char **buf)
+static int LoadFile( char *fn, unsigned long *addr, unsigned long *skip, unsigned char **buf)
 {
   FILE *fp;
   unsigned long len;
@@ -409,7 +409,7 @@ int main( int argc,char *argv[] )
 }
 
 
-void ArgValue( char *s, unsigned long *value )
+static void ArgValue( char *s, unsigned long *value )
 {
   if ( s && isdigit(s[0]) )
   {
@@ -421,7 +421,7 @@ void ArgValue( char *s, unsigned long *value )
 }
 
 
-Boolean ParseCmds( unsigned long argc, char *argv[] )
+static Boolean ParseCmds( unsigned long argc, char *argv[] )
 {
    char *s;
    unsigned long cnt;
@@ -488,7 +488,7 @@ Boolean ParseCmds( unsigned long argc, char *argv[] )
 }
 
 
-void SendFile( unsigned long addr, unsigned long skip, unsigned char *buf, unsigned long len)
+static void SendFile( unsigned long addr, unsigned long skip, unsigned char *buf, unsigned long len)
 {
   long *copy;
   long cksum = 0;
@@ -552,7 +552,7 @@ void SendFile( unsigned long addr, unsigned long skip, unsigned char *buf, unsig
 	 if so, skip,addr and len are adjusted
 */
 
-unsigned long relocate( unsigned char * pdata, unsigned long *len , unsigned long *addr, unsigned long skip)
+static unsigned long relocate( unsigned char * pdata, unsigned long *len , unsigned long *addr, unsigned long skip)
 {
 
   if ( (pdata[0] == 0x60) && (pdata[1] == 0x1a) ){ // GEMDOS - header
@@ -649,7 +649,7 @@ unsigned long relocate( unsigned char * pdata, unsigned long *len , unsigned lon
 
 
 // ZS
-void BoostPriority(void)
+static void BoostPriority(void)
 {
 	#ifdef __WIN32__
 	    SetPriorityClass(GetCurrentProcess(), REALTIME_PRIORITY_CLASS);
