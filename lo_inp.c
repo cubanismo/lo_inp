@@ -69,6 +69,7 @@
 #ifdef __linux__
 	#include <sys/io.h>
 	#include <unistd.h>
+	#include <errno.h>
 #endif
 
 
@@ -306,6 +307,7 @@ static int LoadFile( char *fn, uint32_t *addr, unsigned long *skip, uint8_t **bu
 {
   FILE *fp;
   unsigned long len;
+  size_t nr;
 
   if ( (fp = fopen( fn, "rb" )) == (FILE *)NULL ){
     printf("Couldn't open file '%s'!\n", gImageName);
@@ -323,11 +325,17 @@ static int LoadFile( char *fn, uint32_t *addr, unsigned long *skip, uint8_t **bu
   *buf = (uint8_t *)malloc( len );
 
   if ( *buf == NULL ){
-    printf("SendFile: couldn't alloc buf!\n");
+    printf("LoadFile: couldn't alloc buf!\n");
     return -1;
   }
 
-  fread( *buf, sizeof((*buf)[0]), len, fp );
+  nr = fread( *buf, sizeof((*buf)[0]), len, fp );
+  if ( nr != len) {
+    printf("LoadFile: couldn't read entire file from disk: len = %lu, read = %zu\n", len, nr);
+    free(*buf);
+    *buf = NULL;
+    return -1;
+  }
 
   *skip = relocate( *buf, &len , addr, *skip);    // relocate program
 
@@ -659,6 +667,8 @@ static void BoostPriority(void)
 	#endif
 
 	#ifdef __linux__
-		nice(-20);
+	errno = 0;
+	if ((nice(-20) == -1) && errno)
+		printf("WARNING: Failed to boost priority!\n");
 	#endif
 }
