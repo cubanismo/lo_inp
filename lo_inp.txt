@@ -1,0 +1,57 @@
+Lo_inp - November 9, 2007 version
+
+Hi folks,
+
+This is a modified version of Joe Britt's, 42Bastian Schick's and John Sohn's BJL 
+uploader which should run fine under Windows Win95/98/ME/NT/2000/XP (Vista not
+tested yet), as well as Linux.
+
+Usage is the same as the original loader program.
+
+Other goodies :
+* The -w parameter effect has been tweaked, it should be a little more reliable.
+* A progress indicator has been added.
+* By default, the loader runs with a very high priority to avoid timing problems
+  with other applications (which often result in a failed download). Use the -x 
+  option if you want the normal-priority mode.
+* Various tweaks and bugfixes ;)
+
+Instructions :
+* Under Windows XP (may also apply to WinNT and 2000), change the properties of
+  your parallel port in Device Manager to disable the interrupt and Plug-and-Play
+  detection. It has been reported that it works better that way. You may also need
+  to disable EPP/ECP support in the BIOS.
+  As this program use low-level parallel port access, you need to run it with
+  Administrator privileges.
+* Under Linux, you have to compile the program yourself ; type 
+  "gcc -O2 -o lo_inp lo_inp.c" in a shell window.
+  As this program use low-level parallel port access, you need to run it with
+  root permissions.
+  If the program complains about I/O port accesses even tough you are root, there 
+  is probably a conflict with parallel drivers (it didn't happen to me, but it's
+  possible in theory). The likely culprit is the parport driver and its submodules
+  (parport_pc, etc.) ; try to unload it with a "rmmod parport" before running the
+  program. Unfortunately, parport is often built into the kernel image, so you'll 
+  probably have to reconfigure and recompile your kernel to compile it as a module
+  instead. Not fun :/
+* If the "Waiting for upload..." screen does not appear, or if strange things happen 
+  (red border, Jaguar crashes, etc.), add the -n option and select the upload type 
+  manually by pressing A or C before uploading. 
+* Protector:SE users : Use the -n option.
+
+Extensive testing has yet to be done. Use at your own risk. :-)
+
+Zerosquare (Jagware - jagware.org)
+
+
+Non-programmers : 
+you can get rid of all files except Lo_inp.exe, inpout32.dll and
+Lo_inp.txt for your own use, but please distribute the full archive only.
+
+
+Programmers : 
+- to compile for Windows, I used Bloodshed Software's Dev-C++ 4.9.9.2
+(http://www.bloodshed.net/devcpp.html) and Logix4u's inpout32.dll
+(http://www.logix4u.net/inpout32.htm)
+- to compile for Linux, I used gcc 3.3.6
+- Bjl.s is no longer used, but is still included as a reference. More info can be found in the source file.
