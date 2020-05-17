@@ -74,6 +74,9 @@
 	#endif
 	#include <unistd.h>
 	#include <errno.h>
+	#if defined(HAVE_MRAA)
+		#include "mraa/gpio.h"
+	#endif
 #endif
 
 
@@ -87,9 +90,11 @@
 #endif
 */
 
-#if !defined(HAVE_X86_IO)
-#error "No I/O mechanism available.  Currently only x86 platforms supported"
+#if !defined(HAVE_X86_IO) && !defined(HAVE_MRAA)
+#error "No I/O mechanism available."
+#error "Either install libmraa for GPIO support or build for an x86 target"
 #endif
+
 typedef unsigned char Boolean;
 
 
@@ -166,6 +171,22 @@ static int   g4BitMode = 1;
 static int   gDebugUpload = 0;
 static char *gImageName = "Joe Britt";
 static int   HighPriority = 1;
+#if defined(HAVE_X86_IO)
+static int   gUseParallel = 1;
+#else
+static int   gUseParallel = 0;
+#endif
+
+#if defined(HAVE_MRAA)
+/* GPIO globals */
+static mraa_gpio_context gpio_busy;
+static mraa_gpio_context gpio_data;
+static mraa_gpio_context gpio_strobe;
+/* XXX Edit this for your board/header wiring */
+static const int gpio_pin_busy = 40;
+static const int gpio_pin_strobe = 38;
+static int gpio_pins_data[] = { 28, 29, 31, 32, 33, 35, 36, 37 };
+#endif // defined(HAVE_MRAA)
 
 void (*SendNibble)(uint8_t c) = NULL;
 void (*SendWord)(uint16_t w) = NULL;
@@ -181,6 +202,115 @@ void (*InitPortHyper)(void) = NULL;
 	#define Delay(x) 	usleep((x)*1000)
 #endif
 
+#if defined(HAVE_MRAA)
+static void waitGPIO(void)
+{
+	/*
+	 * XXX I have no idea if a GPIO read takes an equivalent amount of time
+	 * to an x86 I/O op.  We'll see.
+	 */
+	int a;
+	for (a = gWait; a; a--) mraa_gpio_read(gpio_busy);
+}
+
+static void SendNibbleGPIO(uint8_t c)
+{
+	/* Pins are initialized low -> high */
+	int outbits[8] = {
+		c & 0x01,
+		(c & 0x02) >> 1,
+		(c & 0x04) >> 2,
+		(c & 0x08) >> 3,
+		(c & 0x10) >> 4,
+		(c & 0x20) >> 5,
+		(c & 0x40) >> 6,
+		(c & 0x80) >> 7,
+	};
+
+	/* Wait for busy to go low */
+	while (mraa_gpio_read(gpio_busy));
+	waitGPIO();
+
+	/* Write the data lines */
+	mraa_gpio_write_multi(gpio_data, outbits);
+	waitGPIO();
+
+	/* Write strobe low */
+	mraa_gpio_write(gpio_strobe, 0);
+	waitGPIO();
+
+	/* Wait for busy to go high */
+	while (!mraa_gpio_read(gpio_busy));
+	waitGPIO();
+
+	/* Write strobe high */
+	mraa_gpio_write(gpio_strobe, 1);
+	waitGPIO();
+}
+
+static void SendWordGPIO(uint16_t w)
+{
+	unsigned int i, j;
+	int outbits[8] = {0};
+
+	for (j = 1; j <= 3; j++) w = ((w << 1) & 0xFFFF) | (w >> 15);
+
+	for (i = 1; i <= 8; i++)
+	{
+		/* Wait for busy to go high */
+		while (!mraa_gpio_read(gpio_busy));
+		waitGPIO();
+
+		/*      Write some data... ??? */
+		/* Pins are initialized low -> high */
+		outbits[1] = (w & 0x02) >> 1;
+		outbits[2] = (w & 0x04) >> 2;
+		mraa_gpio_write_multi(gpio_data, outbits);
+		waitGPIO();
+
+		/* Set strobe high */
+		mraa_gpio_write(gpio_strobe, 1);
+		waitGPIO();
+
+		for (j = 1; j <= 2; j++) w = ((w << 1) & 0xFFFF) | (w >> 15);
+
+		/* Wait for busy to go low */
+		while (mraa_gpio_read(gpio_busy));
+		waitGPIO();
+
+		/* Set strobe low */
+		mraa_gpio_write(gpio_strobe, 0);
+		waitGPIO();
+	}
+}
+
+static void InitPortNormalGPIO()
+{
+	int outbits[8] = { 0, 0, 0, 0, 0, 0, 0, 0, };
+
+	/* Init data low */
+	mraa_gpio_write_multi(gpio_data, outbits);
+
+	/* Init strobe low... Twice? */
+	mraa_gpio_write(gpio_strobe, 0);
+	mraa_gpio_write(gpio_strobe, 0);
+
+	Delay(100);
+}
+
+static void InitPortHyperGPIO()
+{
+	int outbits[8] = { 0, 0, 0, 0, 0, 0, 0, 0, };
+
+	/* Init data low */
+	mraa_gpio_write_multi(gpio_data, outbits);
+
+	/* Init strobe low */
+	mraa_gpio_write(gpio_strobe, 0);
+
+	Delay(100);
+}
+#endif // defined(HAVE_MRAA)
 
 #if defined(HAVE_X86_IO)
 // ZS
@@ -366,17 +496,32 @@ int main( int argc,char *argv[] )
     printf("       -n => don`t send switch-command\n");
     printf("       -8 => use 8Bit transmission (4Bit is default)\n");
     printf("       -x => do not use high-priority mode.\n");
+    printf("       -g => use GPIO mode.                      default = %s\n", gUseParallel ? "false" : "true");
 
     return -1;
   }
 
-#if defined(HAVE_X86_IO)
-  SendWord = &SendWordX86;
-  SendNibble = &SendNibbleX86;
-  InitPortNormal = &InitPortNormalX86;
-  InitPortHyper = &InitPortHyperX86;
-#endif // defined(HAVE_X86_IO)
- 
+  if (gUseParallel)
+  {
+  #if defined(HAVE_X86_IO)
+    SendWord = &SendWordX86;
+    SendNibble = &SendNibbleX86;
+    InitPortNormal = &InitPortNormalX86;
+    InitPortHyper = &InitPortHyperX86;
+  #endif // defined(HAVE_X86_IO)
+  }
+  else
+  {
+  #if defined(HAVE_MRAA)
+    SendWord = &SendWordGPIO;
+    SendNibble = &SendNibbleGPIO;
+    InitPortNormal = &InitPortNormalGPIO;
+    InitPortHyper = &InitPortHyperGPIO;
+  #endif // defined(HAVE_MRAA)
+  }
+
+  if (gUseParallel)
+  {
   // ZS
   #ifdef __WIN32__
   	if (!Inpout32_Init())
@@ -398,10 +543,26 @@ int main( int argc,char *argv[] )
 		printf("\n");
 		printf("Please check that no other hardware or software is using the parallel port,\n");
 		printf("and that you gave root permissions to this program.\n");
-		
+
 		return -1;
 	}  
   #endif // defined(__linux__) && defined(HAVE_X86_IO)
+  }
+  else
+  {
+  #if defined(HAVE_MRAA)
+    mraa_init();
+    gpio_data = mraa_gpio_init_multi(gpio_pins_data,
+                                     sizeof(gpio_pins_data) /
+                                     sizeof(gpio_pins_data[0]));
+    gpio_strobe = mraa_gpio_init(gpio_pin_strobe);
+    gpio_busy = mraa_gpio_init(gpio_pin_busy);
+
+    mraa_gpio_dir(gpio_data, MRAA_GPIO_OUT);
+    mraa_gpio_dir(gpio_strobe, MRAA_GPIO_OUT);
+    mraa_gpio_dir(gpio_busy, MRAA_GPIO_IN);
+  #endif // defined(HAVE_MRAA)
+  }
 
   // ZS	 
   if (HighPriority) BoostPriority(); 
@@ -421,11 +582,24 @@ int main( int argc,char *argv[] )
     }
   }
 
+  if (gUseParallel)
+  {
   // ZS
   #if defined(__linux__) && defined(HAVE_X86_IO)
     ioperm(gBase, 3, false);	
 	ioperm(0x80, 1, false);
   #endif  
+  }
+  else
+  {
+  #if defined(HAVE_MRAA)
+    mraa_gpio_close(gpio_data);
+    mraa_gpio_close(gpio_strobe);
+    mraa_gpio_close(gpio_busy);
+
+    mraa_deinit();
+  #endif // defined(HAVE_MRAA)
+  }
 
   // ZS
   return 0;
@@ -498,6 +672,10 @@ static Boolean ParseCmds( unsigned long argc, char *argv[] )
     // ZS
     case 'x':
     HighPriority = 0;
+    break;
+
+    case 'g':
+    gUseParallel = 0;
     break;
 
       default:
