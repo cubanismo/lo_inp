@@ -61,13 +61,17 @@
 #ifdef __WIN32__
 	#include <windows.h>   
 	#include "inpout32.h"  
+	#define HAVE_X86_IO 1
 	#define inb(a)          Inp32((a))
 	#define outb(a,b)       Out32((b),(a))
 #endif
 
 // ZS
 #ifdef __linux__
-	#include <sys/io.h>
+	#if defined(__i386__) || defined(__x86_64__)
+		#include <sys/io.h>
+		#define HAVE_X86_IO 1
+	#endif
 	#include <unistd.h>
 	#include <errno.h>
 #endif
@@ -83,6 +87,9 @@
 #endif
 */
 
+#if !defined(HAVE_X86_IO)
+#error "No I/O mechanism available.  Currently only x86 platforms supported"
+#endif
 typedef unsigned char Boolean;
 
 
@@ -160,9 +167,10 @@ static int   gDebugUpload = 0;
 static char *gImageName = "Joe Britt";
 static int   HighPriority = 1;
 
-
-
-
+void (*SendNibble)(uint8_t c) = NULL;
+void (*SendWord)(uint16_t w) = NULL;
+void (*InitPortNormal)(void) = NULL;
+void (*InitPortHyper)(void) = NULL;
 
 // ZS
 #ifdef __WIN32__
@@ -174,8 +182,9 @@ static int   HighPriority = 1;
 #endif
 
 
+#if defined(HAVE_X86_IO)
 // ZS
-static inline void wait()
+static inline void waitX86()
 {
     int a;
     for (a = gWait; a; a--) outb(0x00, 0x80);
@@ -192,25 +201,26 @@ From LOADER.DOC:
 6) continue for the next three bytes
 */
 // ZS
-static inline void SendNibble(uint8_t c)
+static void SendNibbleX86(uint8_t c)
 {
   while( !(inb( gBase+kStatusReg ) & 0x80) )       /* wait for BUSY = 0 */
     ;
-  wait();                                         // ZS
+  waitX86();                                       // ZS
   outb( c, gBase+kDataReg );                       /* drive data */
-  wait();                                         // ZS
+  waitX86();                                       // ZS
   outb( 0x01, gBase+kControlReg );                 /* output, /STB = 0 */
-  wait();                                         // ZS
+  waitX86();                                       // ZS
   while( (inb( gBase+kStatusReg ) & 0x80) )        /* wait for BUSY = 1 */
     ;
-  wait();                                         // ZS
+  waitX86();                                       // ZS
 
   // ZS
   // outb( 0x20, gBase+kControlReg );                 /* input, /STB is high */
   outb( 0x00, gBase+kControlReg );                   /* input, /STB is high */
 
-  wait();                                         // ZS
+  waitX86();                                       // ZS
 }
+#endif // defined(HAVE_X86_IO)
 
 
 // ZS
@@ -256,9 +266,9 @@ register int a;
   SendByte( (uint8_t)(w >> 24) );
 }
 
-
+#if defined(HAVE_X86_IO)
 // ZS
-static inline int SendWord(uint16_t w)
+static void SendWordX86(uint16_t w)
 {
 	unsigned int i, j;
 
@@ -266,24 +276,22 @@ static inline int SendWord(uint16_t w)
 	for (i = 1; i <= 8; i++)
 	{
         while (inb(gBase+kStatusReg) & 0x80);
-        wait();
+        waitX86();
         outb(w & 6, gBase+kDataReg);					
-        wait();
+        waitX86();
         outb(0, gBase+kControlReg);
-        wait();
+        waitX86();
         for (j = 1; j <= 2; j++) w = ((w << 1) & 0xFFFF) | (w >> 15);
 		while (!(inb(gBase+kStatusReg) & 0x80));	
-        wait();
+        waitX86();
         outb(1, gBase+kControlReg);					
-        wait();
+        waitX86();
 	}
-
-	return -1;
 }
 
 
 // ZS
-static void InitPortNormal()
+static void InitPortNormalX86()
 {
 	outb(0, gBase+kDataReg);
 	outb(0, gBase+kStatusReg);
@@ -293,14 +301,14 @@ static void InitPortNormal()
 }
 
 // ZS
-static void InitPortHyper()
+static void InitPortHyperX86()
 {
 	outb(0, gBase+kDataReg);
 	outb(0, gBase+kStatusReg);
 	outb(0, gBase+kControlReg);
 	Delay(100);                    // ZS
 }
-
+#endif // defined(HAVE_X86_IO)
 
 
 static int LoadFile( char *fn, uint32_t *addr, unsigned long *skip, uint8_t **buf)
@@ -361,6 +369,13 @@ int main( int argc,char *argv[] )
 
     return -1;
   }
+
+#if defined(HAVE_X86_IO)
+  SendWord = &SendWordX86;
+  SendNibble = &SendNibbleX86;
+  InitPortNormal = &InitPortNormalX86;
+  InitPortHyper = &InitPortHyperX86;
+#endif // defined(HAVE_X86_IO)
  
   // ZS
   #ifdef __WIN32__
@@ -375,7 +390,7 @@ int main( int argc,char *argv[] )
   #endif
 
   // ZS
-  #ifdef __linux__
+  #if defined(__linux__) && defined(HAVE_X86_IO)
   	// port 0x80 is for timing
   	if ( (ioperm(gBase, 3, true) != 0) || (ioperm(0x80,1,true) != 0) )
 	{
@@ -386,7 +401,7 @@ int main( int argc,char *argv[] )
 		
 		return -1;
 	}  
-  #endif
+  #endif // defined(__linux__) && defined(HAVE_X86_IO)
 
   // ZS	 
   if (HighPriority) BoostPriority(); 
@@ -407,7 +422,7 @@ int main( int argc,char *argv[] )
   }
 
   // ZS
-  #ifdef __linux__
+  #if defined(__linux__) && defined(HAVE_X86_IO)
     ioperm(gBase, 3, false);	
 	ioperm(0x80, 1, false);
   #endif  
