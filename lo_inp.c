@@ -165,6 +165,7 @@ static unsigned long gBase = kLPT1Base;                 /* default to LPT2 */
 static uint32_t gBaseAddr = 0x4000;                     /* default base */
 static unsigned long gHeaderSkip = 0;                   /* default header size */ /* was 28,changed 42BS */
 static unsigned long gWait = 1;
+static uint32_t gMagicWord = 0x22071970;
 static int   gSwitchCommand = 1;
 static int   gStartLoader = 0;
 static int   g4BitMode = 1;
@@ -495,6 +496,7 @@ int main( int argc,char *argv[] )
     printf("       wait - counter between longs.             default = %ld\n",gWait);
     printf("       -n => don`t send switch-command\n");
     printf("       -8 => use 8Bit transmission (4Bit is default)\n");
+    printf("       -d => Data upload, loader restarts\n");
     printf("       -x => do not use high-priority mode.\n");
     printf("       -g => use GPIO mode.                      default = %s\n", gUseParallel ? "false" : "true");
 
@@ -659,6 +661,10 @@ static Boolean ParseCmds( unsigned long argc, char *argv[] )
 	gSwitchCommand = 0;
 	break;
 
+      case 'd':
+	gMagicWord = 0x20102001;
+	break;
+
       case '8' :
 	g4BitMode = 0;
 	break;
@@ -691,7 +697,7 @@ static Boolean ParseCmds( unsigned long argc, char *argv[] )
 }
 
 
-static void SendFile( uint32_t addr, unsigned long skip, uint8_t *buf, unsigned long len)
+static void SendFile( uint32_t addr, unsigned long skip, uint8_t *buf, unsigned long len )
 {
   uint32_t *copy;
   int32_t cksum = 0;
@@ -724,7 +730,7 @@ static void SendFile( uint32_t addr, unsigned long skip, uint8_t *buf, unsigned 
   InitPortHyper();
   SendLongHyper( 0 );          /* syncronize */
   // for(;;)
-  SendLongHyper( 0x22071970 ); /* send magic number */
+  SendLongHyper( gMagicWord ); /* send magic number */
   SendLongHyper( addr );       /* send starting addr */
   SendLongHyper( (uint32_t)len+4 );      /* send length */
 

@@ -24,6 +24,7 @@ Usage is the same as the original loader program;
        wait - counter between longs.             default = 1
        -n => don`t send switch-command
        -8 => use 8Bit transmission (4Bit is default)
+       -d => Data upload, loader restarts
        -x => do not use high-priority mode.
 
 For example, to load the program "jaghello.cof", you might run:
